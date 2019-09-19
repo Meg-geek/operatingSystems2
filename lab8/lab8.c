@@ -15,6 +15,7 @@
 #define FALSE 0
 #define SIGSET_ERROR -1
 #define SIGADDSET_ERROR -1
+#define SIGWAIT_ERROR -1
 
 struct ThreadInfo {
 	int threadNumb;
@@ -22,14 +23,14 @@ struct ThreadInfo {
 	int threadsAmount;
 };
 
-int sigintCaugth = FALSE;
+int sigintCaught = FALSE;
 
 void *countPi(void *parameters){
 	int threadNumb = ((struct ThreadInfo*)parameters)->threadNumb;
 	int threadsAmount = ((struct ThreadInfo*)parameters)->threadsAmount;
 	long long i = threadNumb, checkIterations;
 	double localPi = 0;
-	while(sigintCaugth == FALSE && i < MAX_ITERATIONS_AMOUNT){
+	while(sigintCaught == FALSE && i < MAX_ITERATIONS_AMOUNT){
 		checkIterations = i + ITERATION_CHECK;
 		for(i; i < checkIterations; i+= threadsAmount){
 			localPi += 1.0/(i*4.0 + 1.0);
@@ -37,13 +38,14 @@ void *countPi(void *parameters){
 		}
 		
 	}
-	if(sigintCaugth == TRUE){
+	if(sigintCaught == TRUE){
 		checkIterations = i + ITERATIONS_DELAY;
 		for(; i < checkIterations; i += threadsAmount){
 			localPi += 1.0/(i*4.0 + 1.0);
 			localPi -= 1.0/(i*4.0 + 3.0);
 		}	
 	}
+	sleep(1);
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);
 }
@@ -103,19 +105,44 @@ double getPi(pthread_t* threadsID, int threadsAmount){
 }
 
 int addSignalToThread(int signo){
-	sigset_t *oldset;
+	sigset_t *oldset = (sigset_t*)malloc(sizeof(sigset_t));
 	int funcReturn = pthread_sigmask(FALSE, NULL, oldset);
 	if(funcReturn != 0){
 		perror("pthread_sigmask error");
+		free(oldset);
 		return EXIT_FAILURE;
 	}
-	funcReturn = sigaddset(oldset, SIG_IGN);
+	funcReturn = (int)sigaddset(oldset, SIGINT);
+	if(funcReturn == SIGADDSET_ERROR){
+		perror("sigaddset error");
+		free(oldset);
+		return EXIT_FAILURE;
+	}
 	funcReturn = pthread_sigmask(SIG_SETMASK, oldset, NULL);
 	if(funcReturn != 0){
 		perror("pthread_sigmask error");
+		free(oldset);
 		return EXIT_FAILURE;
 	}
+	free(oldset);
 	return EXIT_SUCCESS;
+}
+
+void signalRepeatHandler(int sign){
+	fprintf(stderr, "I'm interrupting...\n");
+	void *signalReturn = signal(SIGINT, signalRepeatHandler);
+	if(signalReturn == SIG_ERR){
+		perror("signal error");
+	}
+}
+
+void signalHandler(int sign){
+	printf("Signal SIGINT was caught, start interrupting calculation..\n");
+	sigintCaught = TRUE;
+	void *signalReturn = signal(SIGINT, signalRepeatHandler);
+	if(signalReturn == SIG_ERR){
+		perror("signal error");
+	}
 }
 
 int main(int argc, char **argv){
@@ -137,9 +164,11 @@ int main(int argc, char **argv){
 		perror("malloc error");
 		return EXIT_FAILURE;
 	}
-	int sigsetReturn = sigset(SIGINT, SIG_IGN);
-	if(sigsetReturn == SIGSET_ERROR){
-		perror("sigset error ");
+	void *signalReturn = signal(SIGINT, signalHandler);
+	if(signalReturn == SIG_ERR){
+		perror("signal error");
+		freeMemory(threadIDs, threadsInfo);
+		return EXIT_FAILURE;
 	}
 	int createThreadsResult = createThreads(threadIDs, threadsInfo, threadsAmount);
 	if(createThreadsResult == EXIT_FAILURE){
@@ -147,7 +176,9 @@ int main(int argc, char **argv){
 		return EXIT_FAILURE;
 	}
 	int sigintAddReturn = addSignalToThread(SIGINT);
-	printf("\nsigintSetReturn %d \n", sigintAddReturn);
+	//обработать sigintReturn
+	
+	
 	double pi = getPi(threadIDs, threadsAmount);
 	if (pi == EXIT_FAILURE){
 		freeMemory(threadIDs, threadsInfo);
