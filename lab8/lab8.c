@@ -14,8 +14,12 @@
 #define TRUE 1
 #define FALSE 0
 #define SIGSET_ERROR -1
-#define SIGADDSET_ERROR -1
+#define SIGDELSET_ERROR -1
 #define SIGWAIT_ERROR -1
+#define PTHREAD_SIGMASK_SUCCESS 0
+#define SLEEP_TIME 5
+
+int delSigintInThread();
 
 struct ThreadInfo {
 	int threadNumb;
@@ -30,14 +34,18 @@ void *countPi(void *parameters){
 	int threadsAmount = ((struct ThreadInfo*)parameters)->threadsAmount;
 	long long i = threadNumb, checkIterations;
 	double localPi = 0;
+	int delSign = delSigintInThread();
+	if(delSign == EXIT_FAILURE){
+		fprintf(stderr, "THREAD %d :SIGINT wasn't deleted from my signal mask", threadNumb);
+	}
 	while(sigintCaught == FALSE && i < MAX_ITERATIONS_AMOUNT){
 		checkIterations = i + ITERATION_CHECK;
 		for(i; i < checkIterations; i+= threadsAmount){
 			localPi += 1.0/(i*4.0 + 1.0);
 			localPi -= 1.0/(i*4.0 + 3.0);
 		}
-		
 	}
+	sleep(SLEEP_TIME);
 	if(sigintCaught == TRUE){
 		checkIterations = i + ITERATIONS_DELAY;
 		for(; i < checkIterations; i += threadsAmount){
@@ -45,7 +53,6 @@ void *countPi(void *parameters){
 			localPi -= 1.0/(i*4.0 + 3.0);
 		}	
 	}
-	sleep(1);
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);
 }
@@ -92,6 +99,7 @@ double getPi(pthread_t* threadsID, int threadsAmount){
 	int i, threadJoinReturn = PTHREAD_JOIN_SUCCESS;
 	double pi = 0;
 	struct ThreadInfo *joinStatus;
+	sleep(SLEEP_TIME);
 	for(i = 0; i < threadsAmount && threadJoinReturn == PTHREAD_JOIN_SUCCESS; i++){
 		threadJoinReturn = pthread_join(threadsID[i], (void**)&joinStatus); 
 		pi+= joinStatus->threadPi;
@@ -104,22 +112,22 @@ double getPi(pthread_t* threadsID, int threadsAmount){
 	return pi*4;
 }
 
-int addSignalToThread(int signo){
+int delSigintInThread(){
 	sigset_t *oldset = (sigset_t*)malloc(sizeof(sigset_t));
 	int funcReturn = pthread_sigmask(FALSE, NULL, oldset);
-	if(funcReturn != 0){
+	if(funcReturn != PTHREAD_SIGMASK_SUCCESS){
 		perror("pthread_sigmask error");
 		free(oldset);
 		return EXIT_FAILURE;
 	}
-	funcReturn = (int)sigaddset(oldset, SIGINT);
-	if(funcReturn == SIGADDSET_ERROR){
-		perror("sigaddset error");
+	funcReturn = (int)sigdelset(oldset, SIGINT);
+	if(funcReturn == SIGDELSET_ERROR){
+		perror("sigdelset error");
 		free(oldset);
 		return EXIT_FAILURE;
 	}
 	funcReturn = pthread_sigmask(SIG_SETMASK, oldset, NULL);
-	if(funcReturn != 0){
+	if(funcReturn != PTHREAD_SIGMASK_SUCCESS){
 		perror("pthread_sigmask error");
 		free(oldset);
 		return EXIT_FAILURE;
@@ -174,11 +182,7 @@ int main(int argc, char **argv){
 	if(createThreadsResult == EXIT_FAILURE){
 		freeMemory(threadIDs, threadsInfo);
 		return EXIT_FAILURE;
-	}
-	int sigintAddReturn = addSignalToThread(SIGINT);
-	//обработать sigintReturn
-	
-	
+	}	
 	double pi = getPi(threadIDs, threadsAmount);
 	if (pi == EXIT_FAILURE){
 		freeMemory(threadIDs, threadsInfo);
