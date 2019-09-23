@@ -66,6 +66,7 @@ void *countPi(void *parameters){
 		pthread_barrier_wait(&iterBarrier);
 		pthread_mutex_lock(&maxIterMutex);
 	} while((sigintCaught == FALSE || i < maxIterations) && i < MAX_ITERATIONS_AMOUNT);
+	printf("THREAD #%d, iterations: %d\n", threadNumb, i);
 	pthread_mutex_unlock(&maxIterMutex);
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);
