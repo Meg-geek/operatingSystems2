@@ -6,9 +6,8 @@
 #include <signal.h>
 
 #define WRONG_INPUT -1
-#define MAX_ITERATIONS_AMOUNT 10000000
-#define ITERATION_CHECK 1000
-#define ITERATIONS_DELAY 10000
+#define MAX_ITERATIONS_AMOUNT 100000000
+#define ITERATION_CHECK 10000
 #define THREAD_CREATE_SUCCESS 0
 #define PTHREAD_JOIN_SUCCESS 0
 #define TRUE 1
@@ -17,7 +16,7 @@
 #define SIGDELSET_ERROR -1
 #define SIGWAIT_ERROR -1
 #define PTHREAD_SIGMASK_SUCCESS 0
-#define SLEEP_TIME 5
+#define MUTEX_DESTROY_SUCCESS 0
 
 int delSigintInThread();
 
@@ -28,6 +27,8 @@ struct ThreadInfo {
 };
 
 int sigintCaught = FALSE;
+long long maxIterations = 0;
+pthread_mutex_t maxIterMutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *countPi(void *parameters){
 	int threadNumb = ((struct ThreadInfo*)parameters)->threadNumb;
@@ -38,21 +39,20 @@ void *countPi(void *parameters){
 	if(delSign == EXIT_FAILURE){
 		fprintf(stderr, "THREAD %d :SIGINT wasn't deleted from my signal mask", threadNumb);
 	}
-	while(sigintCaught == FALSE && i < MAX_ITERATIONS_AMOUNT){
+	pthread_mutex_lock(&maxIterMutex);
+	while((sigintCaught == FALSE || i < maxIterations) && i < MAX_ITERATIONS_AMOUNT){
 		checkIterations = i + ITERATION_CHECK;
-		for(i; i < checkIterations; i+= threadsAmount){
+		if(sigintCaught == TRUE && checkIterations > maxIterations){
+			maxIterations = checkIterations;
+		}
+		pthread_mutex_unlock(&maxIterMutex);
+		for(i; i <= checkIterations; i+= threadsAmount){
 			localPi += 1.0/(i*4.0 + 1.0);
 			localPi -= 1.0/(i*4.0 + 3.0);
 		}
+		pthread_mutex_lock(&maxIterMutex);
 	}
-	sleep(SLEEP_TIME);
-	if(sigintCaught == TRUE){
-		checkIterations = i + ITERATIONS_DELAY;
-		for(; i < checkIterations; i += threadsAmount){
-			localPi += 1.0/(i*4.0 + 1.0);
-			localPi -= 1.0/(i*4.0 + 3.0);
-		}	
-	}
+	pthread_mutex_unlock(&maxIterMutex);
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);
 }
@@ -93,13 +93,16 @@ int createThreads(pthread_t* threadsID, struct ThreadInfo* threadsInfo, int thre
 void freeMemory(pthread_t* threadsID, struct ThreadInfo* threadsInfo){
 	free(threadsID);
 	free(threadsInfo);
+	int destroyResult = pthread_mutex_destroy(&maxIterMutex);
+	if(destroyResult != MUTEX_DESTROY_SUCCESS){
+		perror("pthread_mutex_destroy error");
+	}
 }
 
 double getPi(pthread_t* threadsID, int threadsAmount){
 	int i, threadJoinReturn = PTHREAD_JOIN_SUCCESS;
 	double pi = 0;
 	struct ThreadInfo *joinStatus;
-	sleep(SLEEP_TIME);
 	for(i = 0; i < threadsAmount && threadJoinReturn == PTHREAD_JOIN_SUCCESS; i++){
 		threadJoinReturn = pthread_join(threadsID[i], (void**)&joinStatus); 
 		pi+= joinStatus->threadPi;
@@ -188,7 +191,7 @@ int main(int argc, char **argv){
 		freeMemory(threadIDs, threadsInfo);
 		return EXIT_FAILURE;
 	}
-	printf("\nPI was counted by %d threads\nResult: %lf\n", threadsAmount, pi);
+	printf("\nPI was counted by %d threads\nResult: %.10lf\n", threadsAmount, pi);
 	freeMemory(threadIDs, threadsInfo);
 	return EXIT_SUCCESS;
 }
