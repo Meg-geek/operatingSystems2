@@ -5,7 +5,7 @@
 #include <limits.h>
 
 #define WRONG_INPUT -1
-#define ITERATIONS_AMOUNT 10000
+#define ITERATIONS_AMOUNT 10000000
 #define THREAD_CREATE_SUCCESS 0
 #define PTHREAD_JOIN_SUCCESS 0
 
@@ -21,7 +21,7 @@ void *countPi(void *parameters){
 	double localPi = 0;
 	for(i; i < ITERATIONS_AMOUNT*(threadNumb + 1); i++){
 		localPi += 1.0/(i*4.0 + 1.0);
-        localPi -= 1.0/(i*4.0 + 3.0);
+        	localPi -= 1.0/(i*4.0 + 3.0);
 	}
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);

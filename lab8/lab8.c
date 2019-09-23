@@ -17,6 +17,7 @@
 #define SIGWAIT_ERROR -1
 #define PTHREAD_SIGMASK_SUCCESS 0
 #define MUTEX_DESTROY_SUCCESS 0
+#define PTHREAD_BARRIER_INIT_DESTR_SUCCESS 0
 
 int delSigintInThread();
 
@@ -27,8 +28,10 @@ struct ThreadInfo {
 };
 
 int sigintCaught = FALSE;
+int threadsAmount;
 long long maxIterations = 0;
 pthread_mutex_t maxIterMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_barrier_t iterBarrier;
 
 void *countPi(void *parameters){
 	int threadNumb = ((struct ThreadInfo*)parameters)->threadNumb;
@@ -40,18 +43,29 @@ void *countPi(void *parameters){
 		fprintf(stderr, "THREAD %d :SIGINT wasn't deleted from my signal mask", threadNumb);
 	}
 	pthread_mutex_lock(&maxIterMutex);
-	while((sigintCaught == FALSE || i < maxIterations) && i < MAX_ITERATIONS_AMOUNT){
-		checkIterations = i + ITERATION_CHECK;
-		if(sigintCaught == TRUE && checkIterations > maxIterations){
+	do{
+		checkIterations = i + ITERATION_CHECK*threadsAmount;
+		if(sigintCaught == TRUE && i > maxIterations){
+			maxIterations = i;
+			checkIterations = i;
+		}
+		if(sigintCaught == TRUE && i < maxIterations){
+			checkIterations = maxIterations;
+		} 
+		if(sigintCaught == FALSE && checkIterations > maxIterations){
 			maxIterations = checkIterations;
 		}
+		if(sigintCaught == TRUE && i >= maxIterations){
+			break;
+		} 
 		pthread_mutex_unlock(&maxIterMutex);
 		for(i; i <= checkIterations; i+= threadsAmount){
 			localPi += 1.0/(i*4.0 + 1.0);
 			localPi -= 1.0/(i*4.0 + 3.0);
 		}
+		pthread_barrier_wait(&iterBarrier);
 		pthread_mutex_lock(&maxIterMutex);
-	}
+	} while((sigintCaught == FALSE || i < maxIterations) && i < MAX_ITERATIONS_AMOUNT);
 	pthread_mutex_unlock(&maxIterMutex);
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);
@@ -96,6 +110,10 @@ void freeMemory(pthread_t* threadsID, struct ThreadInfo* threadsInfo){
 	int destroyResult = pthread_mutex_destroy(&maxIterMutex);
 	if(destroyResult != MUTEX_DESTROY_SUCCESS){
 		perror("pthread_mutex_destroy error");
+	}
+	destroyResult = pthread_barrier_destroy(&iterBarrier);
+	if(destroyResult != PTHREAD_BARRIER_INIT_DESTR_SUCCESS){
+		perror("pthread_barrier_destroy error");
 	}
 }
 
@@ -161,7 +179,7 @@ int main(int argc, char **argv){
 		fprintf(stderr, "Need threads amount\n");
 		return EXIT_FAILURE;
 	}
-	int threadsAmount = getNumb(argv[1]);
+	threadsAmount = getNumb(argv[1]);
 	if(threadsAmount == WRONG_INPUT){
 		fprintf(stderr, "Wrong imput parameter for threads amount, try again\n");
 		return EXIT_FAILURE;
@@ -178,6 +196,12 @@ int main(int argc, char **argv){
 	void *signalReturn = signal(SIGINT, signalHandler);
 	if(signalReturn == SIG_ERR){
 		perror("signal error");
+		freeMemory(threadIDs, threadsInfo);
+		return EXIT_FAILURE;
+	}
+	int barrierReturn = pthread_barrier_init(&iterBarrier, NULL, threadsAmount);
+	if(barrierReturn != PTHREAD_BARRIER_INIT_DESTR_SUCCESS){
+		perror("pthread_barrier_init error");
 		freeMemory(threadIDs, threadsInfo);
 		return EXIT_FAILURE;
 	}
