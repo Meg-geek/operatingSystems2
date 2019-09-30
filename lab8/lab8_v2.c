@@ -10,8 +10,6 @@
 #define ITERATION_CHECK 10000
 #define THREAD_CREATE_SUCCESS 0
 #define PTHREAD_JOIN_SUCCESS 0
-#define TRUE 1
-#define FALSE 0
 #define SIGSET_ERROR -1
 #define SIGDELSET_ERROR -1
 #define SIGWAIT_ERROR -1
@@ -27,10 +25,11 @@ struct ThreadInfo {
 	int threadsAmount;
 };
 
-int sigintCaught = FALSE;
+int sigintCaught = 0;
 int threadsAmount;
 long long maxIterations = 0;
 pthread_mutex_t maxIterMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t printfMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_barrier_t iterBarrier;
 
 void *countPi(void *parameters){
@@ -42,31 +41,31 @@ void *countPi(void *parameters){
 	if(delSign == EXIT_FAILURE){
 		fprintf(stderr, "THREAD %d :SIGINT wasn't deleted from my signal mask", threadNumb);
 	}
-	pthread_mutex_lock(&maxIterMutex);
+	int end = 0;
 	do{
-		checkIterations = i + ITERATION_CHECK*threadsAmount;
-		if(sigintCaught == TRUE && i > maxIterations){
-			maxIterations = i;
-			checkIterations = i;
-		}
-		if(sigintCaught == TRUE && i < maxIterations){
+		if(sigintCaught){
+			pthread_mutex_lock(&maxIterMutex);
+			if(i > maxIterations){
+				maxIterations = i;
+			} 
+			pthread_mutex_unlock(&maxIterMutex);
+			pthread_barrier_wait(&iterBarrier);
 			checkIterations = maxIterations;
-		} 
-		if(sigintCaught == FALSE && checkIterations > maxIterations){
-			maxIterations = checkIterations;
+			end = 1;
+		} else {
+			checkIterations = i + ITERATION_CHECK*threadsAmount;
 		}
-		if(sigintCaught == TRUE && i >= maxIterations){
-			break;
-		} 
-		pthread_mutex_unlock(&maxIterMutex);
 		for(i; i <= checkIterations; i+= threadsAmount){
 			localPi += 1.0/(i*4.0 + 1.0);
 			localPi -= 1.0/(i*4.0 + 3.0);
 		}
-		pthread_barrier_wait(&iterBarrier);
-		pthread_mutex_lock(&maxIterMutex);
-	} while((sigintCaught == FALSE || i < maxIterations) && i < MAX_ITERATIONS_AMOUNT);
-	pthread_mutex_unlock(&maxIterMutex);
+		if(end){
+			break;
+		}
+	} while(i < MAX_ITERATIONS_AMOUNT);
+	pthread_mutex_lock(&printfMutex);
+	printf("THREAD #%d, iterations: %d\n", threadNumb, i);
+	pthread_mutex_unlock(&printfMutex);
 	((struct ThreadInfo*)parameters)->threadPi = localPi;
 	pthread_exit(parameters);
 }
@@ -111,6 +110,10 @@ void freeMemory(pthread_t* threadsID, struct ThreadInfo* threadsInfo){
 	if(destroyResult != MUTEX_DESTROY_SUCCESS){
 		perror("pthread_mutex_destroy error");
 	}
+	destroyResult = pthread_mutex_destroy(&printfMutex);
+	if(destroyResult != MUTEX_DESTROY_SUCCESS){
+		perror("pthread_mutex_destroy error");
+	}
 	destroyResult = pthread_barrier_destroy(&iterBarrier);
 	if(destroyResult != PTHREAD_BARRIER_INIT_DESTR_SUCCESS){
 		perror("pthread_barrier_destroy error");
@@ -135,7 +138,7 @@ double getPi(pthread_t* threadsID, int threadsAmount){
 
 int delSigintInThread(){
 	sigset_t *oldset = (sigset_t*)malloc(sizeof(sigset_t));
-	int funcReturn = pthread_sigmask(FALSE, NULL, oldset);
+	int funcReturn = pthread_sigmask(0, NULL, oldset);
 	if(funcReturn != PTHREAD_SIGMASK_SUCCESS){
 		perror("pthread_sigmask error");
 		free(oldset);
@@ -167,7 +170,7 @@ void signalRepeatHandler(int sign){
 
 void signalHandler(int sign){
 	printf("Signal SIGINT was caught, start interrupting calculation..\n");
-	sigintCaught = TRUE;
+	sigintCaught = 1;
 	void *signalReturn = signal(SIGINT, signalRepeatHandler);
 	if(signalReturn == SIG_ERR){
 		perror("signal error");
