@@ -21,10 +21,6 @@ void freeMemory();
 
 void *thread_body(void *parameters){
 	int i;
-	/*pthread_mutex_lock(&writeMutex);
-	while(whoWrite == PARENT_WRITE){
-		pthread_cond_wait(&writeCond, &writeMutex);
-	}*/
 	for (i = 0; i < STRINGS_AMOUNT; i++){
 		pthread_mutex_lock(&writeMutex);
 		while(whoWrite == PARENT_WRITE){
