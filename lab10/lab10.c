@@ -17,6 +17,8 @@ pthread_cond_t writeCond = PTHREAD_COND_INITIALIZER;
 
 int whoWrite = PARENT_WRITE;
 
+void freeMemory();
+
 void *thread_body(void *parameters){
 	int i;
 	/*pthread_mutex_lock(&writeMutex);
@@ -33,6 +35,7 @@ void *thread_body(void *parameters){
 		pthread_cond_signal(&writeCond);
 		pthread_mutex_unlock(&writeMutex);
 	}
+	freeMemory();
 	return NULL;
 }
 
@@ -54,6 +57,7 @@ int main(int argc, char **argv){
 	
 	if (threadCreateReturn != THREAD_CREATE_SUCCESS){
 		perror("Error in creating new thread");
+		freeMemory();
 		return EXIT_FAILURE;
 	}
 	
